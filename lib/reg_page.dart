@@ -7,6 +7,7 @@ import 'package:signature/signature.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'database_helper.dart';
 
 class RegPageWidget extends StatefulWidget {
   const RegPageWidget({super.key});
@@ -20,7 +21,9 @@ class RegPageWidget extends StatefulWidget {
 
 class _RegPageWidgetState extends State<RegPageWidget> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
-  final TextEditingController textController = TextEditingController(text: 'ENTER CIF KEY');
+  final TextEditingController textController = TextEditingController(
+    text: 'ENTER CIF KEY',
+  );
   final FocusNode textFieldFocusNode = FocusNode();
   final SignatureController signatureController = SignatureController(
     penStrokeWidth: 2,
@@ -28,7 +31,8 @@ class _RegPageWidgetState extends State<RegPageWidget> {
     exportBackgroundColor: Colors.white,
   );
 
-  bool isBluetoothConnected = false; // State variable for Bluetooth connection status
+  bool isBluetoothConnected =
+      false; // State variable for Bluetooth connection status
   XFile? _imageFile; // State variable for the captured image
 
   final ImagePicker _picker = ImagePicker(); // ImagePicker instance
@@ -38,10 +42,22 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   BluetoothDevice? selectedDevice;
   bool isConnected = false;
 
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+  String memberName = "No member found";
+  
+  String? get name => null;
+
   @override
   void initState() {
     super.initState();
     _checkPermissions();
+    textFieldFocusNode.addListener(() {
+      if (textFieldFocusNode.hasFocus) {
+        textController.clear();
+      } else {
+        _searchMember();
+      }
+    });
   }
 
   Future<void> _checkPermissions() async {
@@ -96,11 +112,25 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   }
 
   Future<void> _pickImage() async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
+  final XFile? pickedFile = await _picker.pickImage(
+    source: ImageSource.camera,
+  );
+
+  if (pickedFile != null) {
     setState(() {
       _imageFile = pickedFile;
     });
+
+    // Log the picked image path
+    if (kDebugMode) {
+      print('Picked image path: ${_imageFile!.path}');
+    }
+  } else {
+    if (kDebugMode) {
+      print('No image was picked.');
+    }
   }
+}
 
   void _resetCamera() {
     setState(() {
@@ -112,8 +142,144 @@ class _RegPageWidgetState extends State<RegPageWidget> {
     signatureController.clear();
   }
 
+  Future<void> _saveInfo() async {
+  // Check if the CIF Key is empty
+  if (textController.text.isEmpty || textController.text == 'ENTER CIF KEY') {
+    _showAlertDialog('Error', 'Please input the CIF KEY.');
+    return;
+  }
+
+  // Check if the image is not selected
+  if (_imageFile == null) {
+    _showAlertDialog('Error', 'Please capture an image.');
+    if (kDebugMode) {
+      print('Error: _imageFile is null');
+    }
+    return;
+  }
+
+  // Log the image path to debug
+  if (kDebugMode) {
+    print('Image path before saving: ${_imageFile!.path}');
+  }
+
+  // Check if the signature is empty
+  if (signatureController.isEmpty) {
+    _showAlertDialog('Error', 'Please provide a signature.');
+    if (kDebugMode) {
+      print('Error: signatureController is empty');
+    }
+    return;
+  }
+
+  // Save the data to the database
+  try {
+    final signatureBytes = await signatureController.toPngBytes();
+    final dataToSave = {
+      'cifkey': textController.text,
+      'name': memberName,
+      'imagePath': _imageFile!.path, // Save the image path
+      'signature': signatureBytes, // Save the signature as bytes
+    };
+
+    // Log the data being saved
+    if (kDebugMode) {
+      print('Data to save: $dataToSave');
+    }
+
+    // Call the insertMember function
+    int id = await _dbHelper.insertMember(dataToSave);
+
+    // Log success after saving
+    if (kDebugMode) {
+      print('Data successfully saved to the database with ID: $id');
+    }
+
+    // Show success alert
+    _showAlertDialog(
+      'Success',
+      'You have successfully saved the information.',
+    );
+  } catch (e) {
+    _showAlertDialog(
+      'Error',
+      'Failed to save the information. Please try again.',
+    );
+    if (kDebugMode) {
+      print('Error saving data: $e');
+    }
+  }
+}
+
+  Future<void> _searchMember() async {
+  String cifKey = textController.text;
+
+  // Fetch the member data from the database
+  Map<String, dynamic>? member = await _dbHelper.getMemberByCIFKey(cifKey);
+
+  if (member != null) {
+    // Log the retrieved data
+    if (kDebugMode) {
+      print('Retrieved member data: $member');
+      print('Retrieved image path: ${member["imagePath"]}');
+    }
+
+    setState(() {
+      // Update the UI with the fetched data
+      memberName = member["name"] ?? "No Name";
+      _imageFile = member["imagePath"] != null ? XFile(member["imagePath"]) : null;
+
+      // Log the retrieved image path
+      if (kDebugMode) {
+        print('Retrieved image path: ${member["imagePath"]}');
+      }
+
+      // Clear the signature controller and load the saved signature
+      signatureController.clear();
+      if (member["signature"] != null) {
+        signatureController.importData(
+          Uint8List.fromList(member["signature"]),
+        );
+      }
+    });
+  } else {
+    // Log that no member was found
+    if (kDebugMode) {
+      print('No member found with CIF key: $cifKey');
+    }
+
+    // If no member is found, reset the UI
+    setState(() {
+      memberName = "No member found";
+      _imageFile = null;
+      signatureController.clear();
+    });
+  }
+}
+
+
+  void _showAlertDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _Ticket() async {
-    final bluetooth = await getBluetoothInstance(); // Replace with your method to get the Bluetooth instance
+    final bluetooth = await getBluetoothInstance();
     bluetooth.isConnected.then((isConnected) {
       if (isConnected!) {
         bluetooth.printCustom("Raffle Ticket!", 2, 1);
@@ -128,7 +294,7 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   }
 
   Future<void> _meal() async {
-    final bluetooth = await getBluetoothInstance(); // Replace with your method to get the Bluetooth instance
+    final bluetooth = await getBluetoothInstance();
     bluetooth.isConnected.then((isConnected) {
       if (isConnected!) {
         bluetooth.printCustom("Meal Coupon!", 2, 1);
@@ -143,7 +309,7 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   }
 
   Future<void> _attendance() async {
-    final bluetooth = await getBluetoothInstance(); // Replace with your method to get the Bluetooth instance
+    final bluetooth = await getBluetoothInstance();
     bluetooth.isConnected.then((isConnected) {
       if (isConnected!) {
         bluetooth.printCustom("Attendance Slip!", 2, 1);
@@ -156,7 +322,6 @@ class _RegPageWidgetState extends State<RegPageWidget> {
       }
     });
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -204,19 +369,22 @@ class _RegPageWidgetState extends State<RegPageWidget> {
                                   selectedDevice = device;
                                 });
                               },
-                              items: devices
-                                  .map(
-                                    (device) => DropdownMenuItem(
-                                      value: device,
-                                      child: Text(device.name!),
-                                    ),
-                                  )
-                                  .toList(),
+                              items:
+                                  devices
+                                      .map(
+                                        (device) => DropdownMenuItem(
+                                          value: device,
+                                          child: Text(device.name!),
+                                        ),
+                                      )
+                                      .toList(),
                             ),
                             Text("Selected: ${selectedDevice?.name ?? "None"}"),
                             ElevatedButton(
                               onPressed: _toggleConnection,
-                              child: Text(isConnected ? "Disconnect" : "Connect"),
+                              child: Text(
+                                isConnected ? "Disconnect" : "Connect",
+                              ),
                             ),
                           ],
                         ),
@@ -243,7 +411,11 @@ class _RegPageWidgetState extends State<RegPageWidget> {
               width: double.infinity,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFFFF3165), Color(0xFFEFFE52), Color(0xFFFAEE0A)],
+                  colors: [
+                    Color(0xFFFF3165),
+                    Color(0xFFEFFE52),
+                    Color(0xFFFAEE0A),
+                  ],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
@@ -262,8 +434,21 @@ class _RegPageWidgetState extends State<RegPageWidget> {
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: Colors.white,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
+                        onFieldSubmitted: (value) {
+                          _searchMember();
+                        },
+                      ),
+                    ),
+                    SizedBox(height: screenHeight * 0.02),
+                    Text(
+                      memberName,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     SizedBox(height: screenHeight * 0.02),
@@ -271,9 +456,11 @@ class _RegPageWidgetState extends State<RegPageWidget> {
                       opacity: 0.6,
                       child: CircleAvatar(
                         radius: screenWidth * 0.2,
-                        backgroundImage: _imageFile != null
-                            ? FileImage(File(_imageFile!.path))
-                            : AssetImage('assets/images/mwmx0_600') as ImageProvider,
+                        backgroundImage:
+                            _imageFile != null
+                                ? FileImage(File(_imageFile!.path))
+                                : AssetImage('assets/images/default_avatar.png')
+                                    as ImageProvider,
                       ),
                     ),
                     SizedBox(height: screenHeight * 0.02),
@@ -299,9 +486,19 @@ class _RegPageWidgetState extends State<RegPageWidget> {
                       height: screenHeight * 0.2,
                     ),
                     SizedBox(height: screenHeight * 0.02),
-                    ElevatedButton(
-                      onPressed: _resetSignature,
-                      child: Text('Reset Signature'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton(
+                          onPressed: _resetSignature,
+                          child: Text('Reset Signature'),
+                        ),
+                        SizedBox(width: screenWidth * 0.02),
+                        ElevatedButton(
+                          onPressed: _saveInfo,
+                          child: Text('Save Info'),
+                        ),
+                      ],
                     ),
                     SizedBox(height: screenHeight * 0.02),
                     Row(
@@ -309,18 +506,30 @@ class _RegPageWidgetState extends State<RegPageWidget> {
                       children: [
                         GestureDetector(
                           onTap: _Ticket,
-                          child: _buildOptionCard('Raffle Ticket', FontAwesomeIcons.ticketAlt, Colors.red),
+                          child: _buildOptionCard(
+                            'Raffle Ticket',
+                            FontAwesomeIcons.ticketAlt,
+                            Colors.red,
+                          ),
                         ),
                         GestureDetector(
                           onTap: _meal,
-                          child: _buildOptionCard('Meal Coupon', Icons.set_meal, Colors.blue),
+                          child: _buildOptionCard(
+                            'Meal Coupon',
+                            Icons.set_meal,
+                            Colors.blue,
+                          ),
                         ),
                       ],
                     ),
                     SizedBox(height: screenHeight * 0.02),
                     GestureDetector(
                       onTap: _attendance,
-                      child: _buildOptionCard('Attendance Slip', FontAwesomeIcons.calendar, Colors.orange),
+                      child: _buildOptionCard(
+                        'Attendance Slip',
+                        FontAwesomeIcons.calendar,
+                        Colors.orange,
+                      ),
                     ),
                   ],
                 ),
@@ -338,7 +547,9 @@ class _RegPageWidgetState extends State<RegPageWidget> {
       width: screenWidth * 0.4,
       height: screenWidth * 0.3,
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [color.withOpacity(0.8), color.withOpacity(0.5)]),
+        gradient: LinearGradient(
+          colors: [color.withOpacity(0.8), color.withOpacity(0.5)],
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -346,12 +557,12 @@ class _RegPageWidgetState extends State<RegPageWidget> {
         children: [
           Text(
             title,
-            style: TextStyle(fontSize: screenWidth * 0.05, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: screenWidth * 0.05,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          IconButton(
-            icon: Icon(icon, color: Colors.white),
-            onPressed: () {},
-          ),
+          IconButton(icon: Icon(icon, color: Colors.white), onPressed: () {}),
         ],
       ),
     );
@@ -360,4 +571,10 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   Future<BlueThermalPrinter> getBluetoothInstance() async {
     return BlueThermalPrinter.instance;
   }
+  
+  generateDataToSave(String text, String memberName, String path, Uint8List? signatureBytes) {}
+}
+
+extension on SignatureController {
+  void importData(Uint8List uint8list) {}
 }

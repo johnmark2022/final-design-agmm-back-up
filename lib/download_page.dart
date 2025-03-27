@@ -1,7 +1,9 @@
 import 'package:agmm_v3/HomePage.dart';
 import 'package:agmm_v3/reg_page.dart';
 import 'package:flutter/material.dart';
-
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'database_helper.dart';
 
 class DownloadPage extends StatefulWidget {
   const DownloadPage({super.key});
@@ -12,106 +14,121 @@ class DownloadPage extends StatefulWidget {
 
 class _DownloadPageState extends State<DownloadPage> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+
+  String cifkey = "Loading";
+  String name = "Loading";
 
   void _showAddModal(BuildContext context) {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      String? selectedMunicipality;
-      String? selectedBarangay;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        String? selectedMunicipality;
+        String? selectedBarangay;
 
-      List<String> municipalities = [
-        'Municipality 1',
-        'Municipality 2',
-        'Municipality 3'
-      ];
-      municipalities.sort();
+        List<String> municipalities = [
+          'Jagna',
+          'Getafe',
+          'Buenavista',
+          'Inabanga',
+          'San Miguel',
+          'Guindulman',
+          'Ubay',
+        ];
+        municipalities.sort();
 
-      Map<String, List<String>> barangays = {
-        'Municipality 1': ['ilaya', 'mar', 'looc'],
-        'Municipality 2': ['miguel', 'hernandez', 'john'],
-        'Municipality 3': ['jonel', 'jay', 'jayson'],
-      };
+        Map<String, List<String>> barangays = {
+          'Jagna': ['Bunga-ilaya', 'tejero', 'can uba', 'Malbog', 'Cantagay', 'Buyog'],
+          'Getafe': ['buyog', 'Santono', 'San Jose'],
+          'Buenavista': ['jonel', 'jay', 'jayson'],
+          'Inabanga': ['jonel', 'jay', 'jayson'],
+          'San Miguel': ['jonel', 'jay', 'jayson'],
+          'Ubay': ['polacion'],
+        };
 
-      return StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          return AlertDialog(
-            title: const Text('ADD BARANGAY'),
-            content: SingleChildScrollView(
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.8, // Adjust the width as needed
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Municipality',
-                        border: OutlineInputBorder(),
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: const Text('ADD BARANGAY'),
+              content: SingleChildScrollView(
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.8, // Adjust the width as needed
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Municipality',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: municipalities.map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          setState(() {
+                            selectedMunicipality = newValue;
+                            selectedBarangay = null; // Reset barangay selection
+                          });
+                        },
                       ),
-                      items: municipalities.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        setState(() {
-                          selectedMunicipality = newValue;
-                          selectedBarangay = null; // Reset barangay selection
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Barangay',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Barangay',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: selectedMunicipality == null
+                            ? []
+                            : barangays[selectedMunicipality]!.map((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
+                        onChanged: selectedMunicipality == null
+                            ? null
+                            : (newValue) {
+                                setState(() {
+                                  selectedBarangay = newValue;
+                                });
+                              },
+                        value: selectedBarangay,
+                        disabledHint: const Text('Select a municipality first'),
                       ),
-                      items: selectedMunicipality == null
-                          ? []
-                          : barangays[selectedMunicipality]!.map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                      onChanged: selectedMunicipality == null
-                          ? null
-                          : (newValue) {
-                              setState(() {
-                                selectedBarangay = newValue;
-                              });
-                            },
-                      value: selectedBarangay,
-                      disabledHint: const Text('Select a municipality first'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: const Text('Cancel'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-              TextButton(
-                child: const Text('Add'),
-                onPressed: () async {
-                  _showLoadingDialog(context);
-                  await Future.delayed(const Duration(seconds: 5), () {
-                    _showDownloadedDialog(context);
-                  }); // Simulate a 5-second download
-                },
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('Cancel'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: const Text('Add'),
+                  onPressed: () async {
+                    if (selectedMunicipality != null && selectedBarangay != null) {
+                      print('Selected Municipality: $selectedMunicipality');
+                      print('Selected Barangay: $selectedBarangay');
+                      _showLoadingDialog(context);
+                      await _fetchData(selectedMunicipality!, selectedBarangay!);
+                      Navigator.of(context).pop(); // Close the loading dialog
+                      _showDownloadedDialog(context);
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   void _showLoadingDialog(BuildContext context) {
     showDialog(
@@ -129,6 +146,54 @@ class _DownloadPageState extends State<DownloadPage> {
         );
       },
     );
+  }
+
+  Future<void> _fetchData(String municipality, String barangay) async {
+    try {
+      final response = await http.post(
+        Uri.parse("http://192.168.1.214:3000/api/members/address"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"municipality": municipality, "barangay": barangay}),
+      );
+
+      if (response.statusCode == 200) {
+        List<dynamic> data = jsonDecode(response.body);
+        // Print the entire response body for debugging
+        print('Response body: ${response.body}');
+        // Print the first element of the data list
+        print('First element: ${data[0]}');
+
+        setState(() {
+          cifkey = data[0]["CIFKey"];
+          name = data[0]["MemberName"];
+        });
+
+        // Save data to SQLite
+        for (var item in data) {
+          Map<String, dynamic>? existingMember = await _dbHelper.getMemberByCIFKey(item["CIFKey"]);
+          if (existingMember == null) {
+            await _dbHelper.insertMember({
+              "cifkey": item["CIFKey"],
+              "name": item["MemberName"],
+            });
+          } else {
+            print('Member with CIFKey ${item["CIFKey"]} is already registered.');
+          }
+        }
+
+        // Print all elements of the data list
+        for (var item in data) {
+          print('CIFKey: ${item["CIFKey"]}, MemberName: ${item["MemberName"]}');
+        }
+      } else {
+        // Print the status code and response body for debugging
+        print('Failed to load data. Status code: ${response.statusCode}');
+        print('Response body: ${response.body}');
+      }
+    } catch (e) {
+      // Print the error message for debugging
+      print('Error: $e');
+    }
   }
 
   void _showDownloadedDialog(BuildContext context) {
@@ -180,6 +245,13 @@ class _DownloadPageState extends State<DownloadPage> {
         );
       },
     );
+  }
+
+  Future<void> _showMembers() async {
+    List<Map<String, dynamic>> members = await _dbHelper.getMembers();
+    for (var member in members) {
+      print('CIFKey: ${member["cifkey"]}, Name: ${member["name"]}');
+    }
   }
 
   @override
@@ -259,6 +331,24 @@ class _DownloadPageState extends State<DownloadPage> {
                               vertical: screenHeight * 0.02,
                             ),
                             backgroundColor: Colors.red, // Adjust color as needed
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            _showMembers();
+                          },
+                          icon: const Icon(Icons.list, size: 15),
+                          label: const Text('Show Members'),
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: screenWidth * 0.05,
+                              vertical: screenHeight * 0.02,
+                            ),
+                            backgroundColor: Colors.green, // Adjust color as needed
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
