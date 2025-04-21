@@ -20,50 +20,56 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), 'app_database.db');
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) {
-        db.execute('''
-          CREATE TABLE members (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cifkey TEXT NOT NULL,
-            name TEXT,
-            imagePath TEXT,
-            signature BLOB
-          )
-        ''');
-      },
-    );
-  }
+  String path = join(await getDatabasesPath(), 'app_database.db');
+  return await openDatabase(
+    path,
+    version: 1,
+    onCreate: (db, version) {
+      db.execute('''
+        CREATE TABLE members (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cifkey TEXT NOT NULL,
+          name TEXT,
+          imagePath TEXT,
+          signature BLOB
+        )
+      ''');
+    },
+  );
+}
 
-  Future<int> insertMember(Map<String, dynamic> member) async {
-    try {
-      Database db = await database;
+ Future<int> insertMember(Map<String, dynamic> data) async {
+  final db = await database;
 
-      // Log the data being inserted for debugging
-      if (kDebugMode) {
-        print('Inserting member: $member');
-      }
+  // Ensure null-safe insertion
+  final sanitizedData = {
+    'cifkey': data['cifkey'],
+    'name': data['name'] ?? '',
+    'imagePath': data['imagePath'] ?? null,
+    'signature': data['signature'] ?? null,
+  };
 
-      // Insert the member data into the 'members' table
-      int id = await db.insert('members', member);
+  return await db.insert('members', sanitizedData);
+}
 
-      // Log the success of the insertion
-      if (kDebugMode) {
-        print('Member inserted with ID: $id');
-      }
+Future<int> updateMember(String cifKey, Map<String, dynamic> data) async {
+  final db = await database;
 
-      return id;
-    } catch (e) {
-      // Log any errors that occur during insertion
-      if (kDebugMode) {
-        print('Error inserting member: $e');
-      }
-      rethrow;
-    }
-  }
+  // Ensure null-safe update
+  final sanitizedData = {
+    'name': data['name'] ?? '',
+    'imagePath': data['imagePath'] ?? null,
+    'signature': data['signature'] ?? null,
+  };
+
+  // Update the member where the CIF Key matches
+  return await db.update(
+    'members',
+    sanitizedData,
+    where: 'cifkey = ?',
+    whereArgs: [cifKey],
+  );
+}
 
   Future<List<Map<String, dynamic>>> getMembers() async {
     Database db = await database;
@@ -71,21 +77,15 @@ class DatabaseHelper {
     return await db.query('members');
   }
 
-  Future<Map<String, dynamic>?> getMemberByCIFKey(String cifkey) async {
-    Database db = await database;
-    print('Fetching member with CIF key: $cifkey'); // Log fetch
-    List<Map<String, dynamic>> result = await db.query(
-      'members',
-      where: 'cifkey = ?',
-      whereArgs: [cifkey],
-    );
-    if (result.isNotEmpty) {
-      print('Member found: ${result.first}');
-      return result.first;
-    }
-    print('No member found with CIF key: $cifkey');
-    return null;
-  }
+  Future<Map<String, dynamic>?> getMemberByCIFKey(String cifKey) async {
+  final db = await database;
+  final List<Map<String, dynamic>> result = await db.query(
+    'members',
+    where: 'cifkey = ?',
+    whereArgs: [cifKey],
+  );
+  return result.isNotEmpty ? result.first : null;
+}
 
   Future<void> verifySchema() async {
     Database db = await database;

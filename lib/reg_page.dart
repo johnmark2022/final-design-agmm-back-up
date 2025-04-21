@@ -44,7 +44,7 @@ class _RegPageWidgetState extends State<RegPageWidget> {
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
   String memberName = "No member found";
-  
+
   String? get name => null;
 
   @override
@@ -112,25 +112,25 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   }
 
   Future<void> _pickImage() async {
-  final XFile? pickedFile = await _picker.pickImage(
-    source: ImageSource.camera,
-  );
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.camera,
+    );
 
-  if (pickedFile != null) {
-    setState(() {
-      _imageFile = pickedFile;
-    });
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = pickedFile;
+      });
 
-    // Log the picked image path
-    if (kDebugMode) {
-      print('Picked image path: ${_imageFile!.path}');
-    }
-  } else {
-    if (kDebugMode) {
-      print('No image was picked.');
+      // Log the picked image path
+      if (kDebugMode) {
+        print('Picked image path: ${_imageFile!.path}');
+      }
+    } else {
+      if (kDebugMode) {
+        print('No image was picked.');
+      }
     }
   }
-}
 
   void _resetCamera() {
     setState(() {
@@ -143,13 +143,11 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   }
 
   Future<void> _saveInfo() async {
-  // Check if the CIF Key is empty
   if (textController.text.isEmpty || textController.text == 'ENTER CIF KEY') {
     _showAlertDialog('Error', 'Please input the CIF KEY.');
     return;
   }
 
-  // Check if the image is not selected
   if (_imageFile == null) {
     _showAlertDialog('Error', 'Please capture an image.');
     if (kDebugMode) {
@@ -158,12 +156,6 @@ class _RegPageWidgetState extends State<RegPageWidget> {
     return;
   }
 
-  // Log the image path to debug
-  if (kDebugMode) {
-    print('Image path before saving: ${_imageFile!.path}');
-  }
-
-  // Check if the signature is empty
   if (signatureController.isEmpty) {
     _showAlertDialog('Error', 'Please provide a signature.');
     if (kDebugMode) {
@@ -172,39 +164,39 @@ class _RegPageWidgetState extends State<RegPageWidget> {
     return;
   }
 
-  // Save the data to the database
   try {
     final signatureBytes = await signatureController.toPngBytes();
     final dataToSave = {
-      'cifkey': textController.text,
       'name': memberName,
-      'imagePath': _imageFile!.path, // Save the image path
-      'signature': signatureBytes, // Save the signature as bytes
+      'imagePath': _imageFile?.path,
+      'signature': signatureBytes,
     };
 
-    // Log the data being saved
-    if (kDebugMode) {
-      print('Data to save: $dataToSave');
+    // Check if the member exists
+    Map<String, dynamic>? existingMember = await _dbHelper.getMemberByCIFKey(textController.text);
+
+    if (existingMember == null) {
+      // Insert new member if not found
+      await _dbHelper.insertMember({
+        'cifkey': textController.text,
+        ...dataToSave,
+      });
+      _showAlertDialog('Success', 'Member information saved successfully.');
+    } else {
+      // Update existing member's data
+      await _dbHelper.updateMember(textController.text, dataToSave);
+      _showAlertDialog('Success', 'Member information updated successfully.');
     }
 
-    // Call the insertMember function
-    int id = await _dbHelper.insertMember(dataToSave);
-
-    // Log success after saving
-    if (kDebugMode) {
-      print('Data successfully saved to the database with ID: $id');
-    }
-
-    // Show success alert
-    _showAlertDialog(
-      'Success',
-      'You have successfully saved the information.',
-    );
+    // Clear all displayed data
+    setState(() {
+      textController.text = 'ENTER CIF KEY';
+      memberName = "No member found";
+      _imageFile = null;
+      signatureController.clear();
+    });
   } catch (e) {
-    _showAlertDialog(
-      'Error',
-      'Failed to save the information. Please try again.',
-    );
+    _showAlertDialog('Error', 'Failed to save the information.');
     if (kDebugMode) {
       print('Error saving data: $e');
     }
@@ -214,49 +206,44 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   Future<void> _searchMember() async {
   String cifKey = textController.text;
 
-  // Fetch the member data from the database
+  // Fetch the member from the database using the CIF Key
   Map<String, dynamic>? member = await _dbHelper.getMemberByCIFKey(cifKey);
 
   if (member != null) {
-    // Log the retrieved data
+    setState(() {
+      // Update the member name
+      memberName = member["name"] ?? "No Name";
+
+      // Check if the image path exists and is valid
+      if (member["imagePath"] != null && File(member["imagePath"]).existsSync()) {
+        _imageFile = XFile(member["imagePath"]);
+      } else {
+        _imageFile = null; // Reset the image if the path is invalid
+        if (kDebugMode) {
+          print('Image file does not exist at path: ${member["imagePath"]}');
+        }
+      }
+
+      // Do not display the signature in the UI
+      signatureController.clear();
+    });
+
     if (kDebugMode) {
       print('Retrieved member data: $member');
-      print('Retrieved image path: ${member["imagePath"]}');
     }
-
-    setState(() {
-      // Update the UI with the fetched data
-      memberName = member["name"] ?? "No Name";
-      _imageFile = member["imagePath"] != null ? XFile(member["imagePath"]) : null;
-
-      // Log the retrieved image path
-      if (kDebugMode) {
-        print('Retrieved image path: ${member["imagePath"]}');
-      }
-
-      // Clear the signature controller and load the saved signature
-      signatureController.clear();
-      if (member["signature"] != null) {
-        signatureController.importData(
-          Uint8List.fromList(member["signature"]),
-        );
-      }
-    });
   } else {
-    // Log that no member was found
-    if (kDebugMode) {
-      print('No member found with CIF key: $cifKey');
-    }
-
-    // If no member is found, reset the UI
+    // If no member is found, reset the display
     setState(() {
       memberName = "No member found";
       _imageFile = null;
       signatureController.clear();
     });
+
+    if (kDebugMode) {
+      print('No member found with CIF Key: $cifKey');
+    }
   }
 }
-
 
   void _showAlertDialog(String title, String message) {
     showDialog(
@@ -443,25 +430,45 @@ class _RegPageWidgetState extends State<RegPageWidget> {
                         },
                       ),
                     ),
-                    SizedBox(height: screenHeight * 0.02),
-                    Text(
-                      memberName,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: screenHeight * 0.02),
-                    Opacity(
-                      opacity: 0.6,
-                      child: CircleAvatar(
-                        radius: screenWidth * 0.2,
-                        backgroundImage:
-                            _imageFile != null
-                                ? FileImage(File(_imageFile!.path))
-                                : AssetImage('assets/images/default_avatar.png')
-                                    as ImageProvider,
-                      ),
+                    Column(
+                      children: [
+                        // Display Member Name
+                        Text(
+                          memberName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Display Captured Image or Placeholder
+                        CircleAvatar(
+                          radius: screenWidth * 0.2,
+                          backgroundImage:
+                              _imageFile != null
+                                  ? FileImage(
+                                    File(_imageFile!.path),
+                                  ) // Display the image if available
+                                  : null,
+                          child:
+                              _imageFile == null
+                                  ? const Icon(
+                                    Icons.person,
+                                    size: 50,
+                                    color: Colors.grey,
+                                  ) // Display a placeholder if no image is available
+                                  : null,
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Display message if no image is available
+                        if (_imageFile == null)
+                          const Text(
+                            'Please capture the image',
+                            style: TextStyle(color: Colors.red, fontSize: 14),
+                          ),
+                      ],
                     ),
                     SizedBox(height: screenHeight * 0.02),
                     Row(
@@ -571,8 +578,13 @@ class _RegPageWidgetState extends State<RegPageWidget> {
   Future<BlueThermalPrinter> getBluetoothInstance() async {
     return BlueThermalPrinter.instance;
   }
-  
-  generateDataToSave(String text, String memberName, String path, Uint8List? signatureBytes) {}
+
+  generateDataToSave(
+    String text,
+    String memberName,
+    String path,
+    Uint8List? signatureBytes,
+  ) {}
 }
 
 extension on SignatureController {
